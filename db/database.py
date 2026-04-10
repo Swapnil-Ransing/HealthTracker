@@ -120,6 +120,19 @@ def init_db():
                 user_id INTEGER PRIMARY KEY,
                 calorie_deficit_constant REAL DEFAULT 500,
                 daily_water_goal_liters REAL DEFAULT 3.0,
+                activity_level TEXT DEFAULT 'moderate',
+                diet_preference TEXT DEFAULT 'balanced',
+                goal_type TEXT DEFAULT 'weight_loss',
+                target_loss_per_week REAL DEFAULT 0.5,
+                recommended_daily_calories REAL DEFAULT 0,
+                recommended_protein REAL DEFAULT 0,
+                recommended_carbs REAL DEFAULT 0,
+                recommended_fat REAL DEFAULT 0,
+                use_recommendations INTEGER DEFAULT 1,
+                custom_calorie_goal REAL DEFAULT 0,
+                custom_protein_goal REAL DEFAULT 0,
+                custom_carbs_goal REAL DEFAULT 0,
+                custom_fat_goal REAL DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(user_id)
@@ -127,6 +140,10 @@ def init_db():
         """)
 
         conn.commit()
+        
+        # Run migrations for existing databases
+        migrate_db()
+        
         print("✅ Database initialized successfully!")
         return True
 
@@ -135,6 +152,56 @@ def init_db():
         return False
     finally:
         conn.close()
+
+
+def migrate_db():
+    """Apply any necessary migrations to existing databases."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check if settings table exists
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'")
+        if not cursor.fetchone():
+            return  # Table doesn't exist yet, will be created
+        
+        # Get existing columns in settings table
+        cursor.execute("PRAGMA table_info(settings)")
+        existing_columns = [col[1] for col in cursor.fetchall()]
+        
+        # Define columns that should exist
+        expected_columns = {
+            'activity_level': "TEXT DEFAULT 'moderate'",
+            'diet_preference': "TEXT DEFAULT 'balanced'",
+            'goal_type': "TEXT DEFAULT 'weight_loss'",
+            'target_loss_per_week': "REAL DEFAULT 0.5",
+            'recommended_daily_calories': "REAL DEFAULT 0",
+            'recommended_protein': "REAL DEFAULT 0",
+            'recommended_carbs': "REAL DEFAULT 0",
+            'recommended_fat': "REAL DEFAULT 0",
+            'use_recommendations': "INTEGER DEFAULT 1",
+            'custom_calorie_goal': "REAL DEFAULT 0",
+            'custom_protein_goal': "REAL DEFAULT 0",
+            'custom_carbs_goal': "REAL DEFAULT 0",
+            'custom_fat_goal': "REAL DEFAULT 0",
+        }
+        
+        # Add missing columns
+        for col_name, col_def in expected_columns.items():
+            if col_name not in existing_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE settings ADD COLUMN {col_name} {col_def}")
+                except sqlite3.OperationalError as e:
+                    pass  # Column may already exist, ignore
+        
+        conn.commit()
+    except Exception as e:
+        # Log but don't fail - migration errors shouldn't break the app
+        pass
+    finally:
+        if conn:
+            conn.close()
 
 
 # ==================== USER MANAGEMENT ====================
@@ -577,14 +644,42 @@ def update_daily_summary_cheat_day(user_id: int, date: str, is_cheat_day: int) -
 # ==================== SETTINGS ====================
 
 def get_settings(user_id: int) -> Optional[Dict]:
-    """Get user settings."""
+    """Get user settings with defaults for all expected fields."""
     conn = get_db_connection()
     cursor = conn.cursor()
+    
+    # Default values for all settings
+    defaults = {
+        'user_id': user_id,
+        'calorie_deficit_constant': 500,
+        'daily_water_goal_liters': 3.0,
+        'activity_level': 'moderate',
+        'diet_preference': 'balanced',
+        'goal_type': 'weight_loss',
+        'target_loss_per_week': 0.5,
+        'recommended_daily_calories': 0,
+        'recommended_protein': 0,
+        'recommended_carbs': 0,
+        'recommended_fat': 0,
+        'use_recommendations': 1,
+        'custom_calorie_goal': 0,
+        'custom_protein_goal': 0,
+        'custom_carbs_goal': 0,
+        'custom_fat_goal': 0,
+    }
 
     try:
         cursor.execute("SELECT * FROM settings WHERE user_id = ?", (user_id,))
         row = cursor.fetchone()
-        return dict(row) if row else None
+        
+        if row:
+            # Merge database values with defaults
+            settings = defaults.copy()
+            settings.update(dict(row))
+            return settings
+        else:
+            # No settings yet, return defaults
+            return defaults
     finally:
         conn.close()
 

@@ -7,7 +7,7 @@ from datetime import datetime
 load_dotenv()
 
 # Import database initialization
-from db.database import init_db, get_user, get_settings, get_family_members
+from db.database import init_db, get_user, get_settings, get_family_members, migrate_db
 
 # Import authentication functions
 from utils.auth import register_user, login_user, get_user_info
@@ -37,6 +37,12 @@ st.markdown("""
 # Initialize database on first run
 if not os.path.exists("db/data.db"):
     init_db()
+else:
+    # Run migrations on existing databases
+    try:
+        migrate_db()
+    except:
+        pass  # Continue even if migration fails
 
 # Initialize session state
 if 'user_id' not in st.session_state:
@@ -233,7 +239,7 @@ def show_dashboard():
     st.title(f"🏃 Welcome back, {st.session_state.user_name}!")
     
     # Tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Dashboard", "Meal Logger", "Water Tracker", "Analytics", "Settings"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Dashboard", "Meal Logger", "Water Tracker", "Settings & Goals", "Analytics", "Activity"])
     
     with tab1:
         st.info("📊 Dashboard - Coming in next phases")
@@ -249,10 +255,15 @@ def show_dashboard():
         water_tracker_page()
     
     with tab4:
-        st.info("📈 Analytics - Coming in Phase 7")
+        # Import and display settings & recommendations
+        from pages.settings_recommendations import settings_recommendations_page
+        settings_recommendations_page()
     
     with tab5:
-        st.info("⚙️ Settings - Coming in Phase 8")
+        st.info("📈 Analytics - Coming in Phase 7")
+    
+    with tab6:
+        st.info("🏋️ Activity & Weight Logging - Coming in Phase 6B")
 
 
 def main():
