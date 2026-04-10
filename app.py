@@ -263,7 +263,9 @@ def show_dashboard():
         st.info("📈 Analytics - Coming in Phase 7")
     
     with tab6:
-        st.info("🏋️ Activity & Weight Logging - Coming in Phase 6B")
+        # Import and display activity & weight logger
+        from pages.activity_weight_logger import activity_weight_logger_page
+        activity_weight_logger_page()
 
 
 def main():

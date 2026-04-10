@@ -641,6 +641,93 @@ def update_daily_summary_cheat_day(user_id: int, date: str, is_cheat_day: int) -
         conn.close()
 
 
+def create_daily_summary_if_needed(user_id: int, date: str) -> bool:
+    """
+    Create a daily summary row for the user if it doesn't exist.
+    
+    Args:
+        user_id: User ID
+        date: Date string (YYYY-MM-DD)
+    
+    Returns:
+        True if created or already exists, False on error
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Check if row exists
+        cursor.execute(
+            "SELECT id FROM daily_summary WHERE user_id = ? AND date = ?",
+            (user_id, date)
+        )
+        
+        if not cursor.fetchone():
+            # Row doesn't exist, create it
+            cursor.execute("""
+                INSERT INTO daily_summary 
+                (user_id, date, calories_consumed, protein, carbs, fat, fiber,
+                 calories_walk, calories_gym, calories_burned, calorie_deficit,
+                 water_intake_liters, is_cheat_day, created_at, updated_at)
+                VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ?, ?)
+            """, (user_id, date, datetime.now(), datetime.now()))
+            conn.commit()
+        
+        return True
+    except sqlite3.Error as e:
+        print(f"❌ Error creating daily summary: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def update_daily_summary_activity(user_id: int, date: str, activity_type: str,
+                                  duration_or_distance: float, pace_or_intensity: str,
+                                  calories_burned: float) -> bool:
+    """
+    Update activity (gym or walking) in daily summary.
+    
+    Args:
+        user_id: User ID
+        date: Date string (YYYY-MM-DD)
+        activity_type: "gym" or "walk"
+        duration_or_distance: Duration in minutes for gym, distance in km for walk
+        pace_or_intensity: Pace for walking, intensity level for gym
+        calories_burned: Calories burned (already calculated)
+    
+    Returns:
+        True if successful, False on error
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        if activity_type == "gym":
+            cursor.execute("""
+                UPDATE daily_summary
+                SET calories_gym = calories_gym + ?,
+                    updated_at = ?
+                WHERE user_id = ? AND date = ?
+            """, (calories_burned, datetime.now(), user_id, date))
+        
+        elif activity_type == "walk":
+            cursor.execute("""
+                UPDATE daily_summary
+                SET calories_walk = calories_walk + ?,
+                    updated_at = ?
+                WHERE user_id = ? AND date = ?
+            """, (calories_burned, datetime.now(), user_id, date))
+        
+        conn.commit()
+        return True
+    
+    except sqlite3.Error as e:
+        print(f"❌ Error updating activity: {e}")
+        return False
+    finally:
+        conn.close()
+
+
 # ==================== SETTINGS ====================
 
 def get_settings(user_id: int) -> Optional[Dict]:

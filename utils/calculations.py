@@ -111,27 +111,32 @@ def calculate_calories_burned_walking(distance_km: float = None, duration_minute
     return 0.0
 
 
-def calculate_calories_burned_gym(duration_minutes: float, intensity: str = "moderate",
+def calculate_calories_burned_gym(duration_minutes: float, intensity: float = 1.0,
                                   body_weight_kg: float = 70) -> float:
     """
     Calculate calories burned during gym workouts.
     
     Args:
         duration_minutes: Duration of workout in minutes
-        intensity: "light", "moderate", or "intense"
+        intensity: Intensity multiplier (0.5=light, 1.0=moderate, 1.5=intense)
+                  or string ("light", "moderate", "intense") for backward compatibility
         body_weight_kg: Body weight in kg
     
     Returns:
         Estimated calories burned
     """
-    intensity_rates = {
-        "light": 4,      # 4 cal/min (light cardio, easy weights)
-        "moderate": 8,   # 8 cal/min (moderate cardio, regular weights)
-        "intense": 12    # 12 cal/min (high-intensity intervals, heavy lifting)
-    }
+    # Handle string input for backward compatibility
+    if isinstance(intensity, str):
+        intensity_map = {
+            "light": 0.5,
+            "moderate": 1.0,
+            "intense": 1.5
+        }
+        intensity = intensity_map.get(intensity.lower(), 1.0)
     
-    base_rate = intensity_rates.get(intensity.lower(), 8)
-    adjusted_rate = (body_weight_kg / 70) * base_rate
+    # Base rate: 8 cal/min at 70kg body weight, moderate intensity
+    base_rate = 8.0
+    adjusted_rate = (body_weight_kg / 70) * base_rate * intensity
     
     return round(duration_minutes * adjusted_rate, 2)
 
