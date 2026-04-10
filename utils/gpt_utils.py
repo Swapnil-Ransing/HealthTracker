@@ -57,7 +57,7 @@ def calculate_nutrition_from_meal(meal_description: str, retry_on_error: bool = 
     
     # Check cache first
     if meal_key in _meal_cache:
-        print(f"📦 Using cached meal: {meal_description}")
+        # Silently return cached result
         return (True, _meal_cache[meal_key])
     
     # Create GPT prompt
@@ -127,22 +127,21 @@ Make realistic estimates based on typical portion sizes."""
         return (True, nutrition_data)
     
     except RateLimitError:
-        print("⚠️ Rate limited by OpenAI API. Please try again in a moment.")
+        # Silently handle rate limit
         return (False, None)
     
     except AuthenticationError:
-        print("❌ OpenAI API key is invalid. Please check your .env file.")
+        # Silently handle auth error
         return (False, None)
     
     except APIError as e:
-        print(f"❌ OpenAI API error: {str(e)}")
+        # Silently handle API error
         if retry_on_error:
-            print("🔄 Retrying...")
             return calculate_nutrition_from_meal(meal_description, retry_on_error=False)
         return (False, None)
     
     except Exception as e:
-        print(f"❌ Error: {str(e)}")
+        # Silently handle other errors
         return (False, None)
 
 
@@ -210,7 +209,6 @@ def clear_cache():
     """Clear the meal cache (useful for testing)."""
     global _meal_cache
     _meal_cache = {}
-    print("✅ Meal cache cleared")
 
 
 def get_cache_stats():
@@ -224,16 +222,7 @@ def get_cache_stats():
 def validate_api_key() -> bool:
     """Validate that OpenAI API key is configured."""
     api_key = os.getenv("OPENAI_API_KEY", "")
-    
-    if not api_key:
-        print("❌ OPENAI_API_KEY not found in .env file")
-        return False
-    
-    if not api_key.startswith("sk-"):
-        print("❌ OPENAI_API_KEY appears to be invalid (should start with 'sk-')")
-        return False
-    
-    return True
+    return bool(api_key and api_key.startswith("sk-"))
 
 
 if __name__ == "__main__":

@@ -239,10 +239,14 @@ def show_dashboard():
         st.info("📊 Dashboard - Coming in next phases")
     
     with tab2:
-        st.info("🍽️ Meal Logger - Coming in Phase 5")
+        # Import and display meal logger
+        from pages.meal_logger import meal_logger_page
+        meal_logger_page()
     
     with tab3:
-        st.info("💧 Water Tracker - Coming in Phase 5")
+        # Import and display water tracker
+        from pages.water_tracker import water_tracker_page
+        water_tracker_page()
     
     with tab4:
         st.info("📈 Analytics - Coming in Phase 7")
