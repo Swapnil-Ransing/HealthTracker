@@ -1,0 +1,676 @@
+"""
+Database module for HealthTracker - SQLite operations and schema management.
+Handles all database interactions for users, families, meals, nutrition tracking, and activities.
+"""
+
+import sqlite3
+import os
+from datetime import datetime
+from typing import Optional, List, Dict, Tuple
+import hashlib
+import secrets
+
+DB_PATH = "db/data.db"
+
+
+def get_db_connection():
+    """Get a database connection with row factory."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db():
+    """Initialize database with all required tables."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Families table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS families (
+                family_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                family_name TEXT NOT NULL,
+                family_code TEXT UNIQUE NOT NULL,
+                created_by INTEGER NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (created_by) REFERENCES users(user_id)
+            )
+        """)
+
+        # Users table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                family_id INTEGER,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                name TEXT NOT NULL,
+                gender TEXT,
+                age INTEGER,
+                height REAL,
+                current_weight REAL,
+                target_weight REAL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (family_id) REFERENCES families(family_id)
+            )
+        """)
+
+        # Nutrition log table (raw meal entries)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS nutrition_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                date DATE NOT NULL,
+                meal_type TEXT NOT NULL,
+                meal_description TEXT NOT NULL,
+                calories REAL,
+                protein REAL,
+                carbs REAL,
+                fat REAL,
+                fiber REAL,
+                gpt_raw_response TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
+            )
+        """)
+
+        # Water log table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS water_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                date DATE NOT NULL,
+                water_intake_liters REAL NOT NULL,
+                time TIME,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
+            )
+        """)
+
+        # Daily summary table (aggregated daily data)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS daily_summary (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                date DATE NOT NULL UNIQUE,
+                calories_consumed REAL DEFAULT 0,
+                protein REAL DEFAULT 0,
+                carbs REAL DEFAULT 0,
+                fat REAL DEFAULT 0,
+                fiber REAL DEFAULT 0,
+                calories_walk REAL DEFAULT 0,
+                calories_gym REAL DEFAULT 0,
+                calories_burned REAL DEFAULT 0,
+                calorie_deficit REAL DEFAULT 0,
+                water_intake_liters REAL DEFAULT 0,
+                weight REAL,
+                is_cheat_day INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id),
+                UNIQUE(user_id, date)
+            )
+        """)
+
+        # Settings table (user-specific settings)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                user_id INTEGER PRIMARY KEY,
+                calorie_deficit_constant REAL DEFAULT 500,
+                daily_water_goal_liters REAL DEFAULT 3.0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
+            )
+        """)
+
+        conn.commit()
+        print("✅ Database initialized successfully!")
+        return True
+
+    except sqlite3.Error as e:
+        print(f"❌ Database initialization error: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+# ==================== USER MANAGEMENT ====================
+
+def create_user(username: str, password: str, name: str, family_id: Optional[int] = None,
+                gender: Optional[str] = None, age: Optional[int] = None,
+                height: Optional[float] = None, current_weight: Optional[float] = None,
+                target_weight: Optional[float] = None) -> Optional[int]:
+    """Create a new user account. Returns user_id if successful, None otherwise."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        password_hash = hash_password(password)
+
+        cursor.execute("""
+            INSERT INTO users (family_id, username, password_hash, name, gender, age, height, current_weight, target_weight)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (family_id, username, password_hash, name, gender, age, height, current_weight, target_weight))
+
+        user_id = cursor.lastrowid
+
+        # Create default settings for user
+        cursor.execute("""
+            INSERT INTO settings (user_id, calorie_deficit_constant, daily_water_goal_liters)
+            VALUES (?, 500, 3.0)
+        """, (user_id,))
+
+        conn.commit()
+        return user_id
+
+    except sqlite3.Error as e:
+        print(f"❌ Error creating user: {e}")
+        return None
+    finally:
+        conn.close()
+
+
+def get_user(user_id: int) -> Optional[Dict]:
+    """Get user details by user_id."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_user_by_username(username: str) -> Optional[Dict]:
+    """Get user details by username."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def authenticate_user(username: str, password: str) -> Optional[int]:
+    """Authenticate user and return user_id if credentials are correct, None otherwise."""
+    user = get_user_by_username(username)
+
+    if user and verify_password(password, user['password_hash']):
+        return user['user_id']
+    return None
+
+
+def user_exists(username: str) -> bool:
+    """Check if a username already exists."""
+    return get_user_by_username(username) is not None
+
+
+def update_user_profile(user_id: int, **kwargs) -> bool:
+    """Update user profile information."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        allowed_fields = ['name', 'gender', 'age', 'height', 'current_weight', 'target_weight']
+        updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
+
+        if not updates:
+            return True
+
+        set_clause = ", ".join([f"{k} = ?" for k in updates.keys()])
+        values = list(updates.values()) + [datetime.now(), user_id]
+
+        cursor.execute(f"""
+            UPDATE users
+            SET {set_clause}, updated_at = ?
+            WHERE user_id = ?
+        """, values)
+
+        conn.commit()
+        return True
+
+    except sqlite3.Error as e:
+        print(f"❌ Error updating user profile: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+# ==================== FAMILY MANAGEMENT ====================
+
+def create_family(family_name: str, created_by: int) -> Optional[int]:
+    """Create a new family group. Returns family_id if successful, None otherwise."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        family_code = generate_family_code()
+
+        cursor.execute("""
+            INSERT INTO families (family_name, family_code, created_by)
+            VALUES (?, ?, ?)
+        """, (family_name, family_code, created_by))
+
+        family_id = cursor.lastrowid
+        conn.commit()
+        return family_id
+
+    except sqlite3.Error as e:
+        print(f"❌ Error creating family: {e}")
+        return None
+    finally:
+        conn.close()
+
+
+def get_family(family_id: int) -> Optional[Dict]:
+    """Get family details by family_id."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("SELECT * FROM families WHERE family_id = ?", (family_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_family_by_code(family_code: str) -> Optional[Dict]:
+    """Get family details by family code."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("SELECT * FROM families WHERE family_code = ?", (family_code,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_family_members(family_id: int) -> List[Dict]:
+    """Get all members of a family."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("SELECT * FROM users WHERE family_id = ? ORDER BY created_at", (family_id,))
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def add_user_to_family(user_id: int, family_id: int) -> bool:
+    """Add an existing user to a family."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("UPDATE users SET family_id = ? WHERE user_id = ?", (family_id, user_id))
+        conn.commit()
+        return True
+    except sqlite3.Error as e:
+        print(f"❌ Error adding user to family: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+# ==================== MEAL & NUTRITION LOGGING ====================
+
+def log_meal(user_id: int, date: str, meal_type: str, meal_description: str,
+             calories: Optional[float] = None, protein: Optional[float] = None,
+             carbs: Optional[float] = None, fat: Optional[float] = None,
+             fiber: Optional[float] = None, gpt_raw_response: Optional[str] = None) -> Optional[int]:
+    """Log a meal entry. Returns meal_id if successful, None otherwise."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            INSERT INTO nutrition_log 
+            (user_id, date, meal_type, meal_description, calories, protein, carbs, fat, fiber, gpt_raw_response)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, date, meal_type, meal_description, calories, protein, carbs, fat, fiber, gpt_raw_response))
+
+        meal_id = cursor.lastrowid
+        conn.commit()
+        return meal_id
+
+    except sqlite3.Error as e:
+        print(f"❌ Error logging meal: {e}")
+        return None
+    finally:
+        conn.close()
+
+
+def get_meals_by_date(user_id: int, date: str) -> List[Dict]:
+    """Get all meals logged for a specific user on a specific date."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT * FROM nutrition_log
+            WHERE user_id = ? AND date = ?
+            ORDER BY created_at
+        """, (user_id, date))
+
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def get_meals_by_date_range(user_id: int, start_date: str, end_date: str) -> List[Dict]:
+    """Get all meals logged for a date range."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT * FROM nutrition_log
+            WHERE user_id = ? AND date BETWEEN ? AND ?
+            ORDER BY date, created_at
+        """, (user_id, start_date, end_date))
+
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def delete_meal(meal_id: int) -> bool:
+    """Delete a meal entry."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("DELETE FROM nutrition_log WHERE id = ?", (meal_id,))
+        conn.commit()
+        return True
+    except sqlite3.Error as e:
+        print(f"❌ Error deleting meal: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+# ==================== WATER INTAKE LOGGING ====================
+
+def log_water(user_id: int, date: str, water_liters: float, time: Optional[str] = None) -> Optional[int]:
+    """Log water intake. Returns water_log_id if successful, None otherwise."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            INSERT INTO water_log (user_id, date, water_intake_liters, time)
+            VALUES (?, ?, ?, ?)
+        """, (user_id, date, water_liters, time))
+
+        water_id = cursor.lastrowid
+        conn.commit()
+        return water_id
+
+    except sqlite3.Error as e:
+        print(f"❌ Error logging water: {e}")
+        return None
+    finally:
+        conn.close()
+
+
+def get_water_log_by_date(user_id: int, date: str) -> List[Dict]:
+    """Get all water intake entries for a specific date."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT * FROM water_log
+            WHERE user_id = ? AND date = ?
+            ORDER BY time
+        """, (user_id, date))
+
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def get_total_water_by_date(user_id: int, date: str) -> float:
+    """Get total water intake for a specific date."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT SUM(water_intake_liters) as total
+            FROM water_log
+            WHERE user_id = ? AND date = ?
+        """, (user_id, date))
+
+        row = cursor.fetchone()
+        return row['total'] or 0.0
+    finally:
+        conn.close()
+
+
+# ==================== DAILY SUMMARY ====================
+
+def save_daily_summary(user_id: int, date: str, calories_consumed: float = 0,
+                      protein: float = 0, carbs: float = 0, fat: float = 0, fiber: float = 0,
+                      calories_walk: float = 0, calories_gym: float = 0, calories_burned: float = 0,
+                      calorie_deficit: float = 0, water_intake: float = 0,
+                      weight: Optional[float] = None, is_cheat_day: int = 0) -> bool:
+    """Save or update daily summary for a user."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            INSERT OR REPLACE INTO daily_summary
+            (user_id, date, calories_consumed, protein, carbs, fat, fiber,
+             calories_walk, calories_gym, calories_burned, calorie_deficit, water_intake_liters,
+             weight, is_cheat_day, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, date, calories_consumed, protein, carbs, fat, fiber,
+              calories_walk, calories_gym, calories_burned, calorie_deficit, water_intake,
+              weight, is_cheat_day, datetime.now()))
+
+        conn.commit()
+        return True
+
+    except sqlite3.Error as e:
+        print(f"❌ Error saving daily summary: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def get_daily_summary(user_id: int, date: str) -> Optional[Dict]:
+    """Get daily summary for a user on a specific date."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT * FROM daily_summary
+            WHERE user_id = ? AND date = ?
+        """, (user_id, date))
+
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def get_daily_summaries_range(user_id: int, start_date: str, end_date: str) -> List[Dict]:
+    """Get daily summaries for a date range."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            SELECT * FROM daily_summary
+            WHERE user_id = ? AND date BETWEEN ? AND ?
+            ORDER BY date
+        """, (user_id, start_date, end_date))
+
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def update_daily_summary_weight(user_id: int, date: str, weight: float) -> bool:
+    """Update weight in daily summary."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            UPDATE daily_summary
+            SET weight = ?, updated_at = ?
+            WHERE user_id = ? AND date = ?
+        """, (weight, datetime.now(), user_id, date))
+
+        conn.commit()
+        return True
+    except sqlite3.Error as e:
+        print(f"❌ Error updating weight: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def update_daily_summary_cheat_day(user_id: int, date: str, is_cheat_day: int) -> bool:
+    """Update cheat day flag in daily summary."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            UPDATE daily_summary
+            SET is_cheat_day = ?, updated_at = ?
+            WHERE user_id = ? AND date = ?
+        """, (is_cheat_day, datetime.now(), user_id, date))
+
+        conn.commit()
+        return True
+    except sqlite3.Error as e:
+        print(f"❌ Error updating cheat day flag: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+# ==================== SETTINGS ====================
+
+def get_settings(user_id: int) -> Optional[Dict]:
+    """Get user settings."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("SELECT * FROM settings WHERE user_id = ?", (user_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def update_settings(user_id: int, calorie_deficit: Optional[float] = None,
+                   water_goal: Optional[float] = None) -> bool:
+    """Update user settings."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        if calorie_deficit is not None:
+            cursor.execute("""
+                UPDATE settings
+                SET calorie_deficit_constant = ?, updated_at = ?
+                WHERE user_id = ?
+            """, (calorie_deficit, datetime.now(), user_id))
+
+        if water_goal is not None:
+            cursor.execute("""
+                UPDATE settings
+                SET daily_water_goal_liters = ?, updated_at = ?
+                WHERE user_id = ?
+            """, (water_goal, datetime.now(), user_id))
+
+        conn.commit()
+        return True
+
+    except sqlite3.Error as e:
+        print(f"❌ Error updating settings: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+# ==================== PASSWORD HASHING ====================
+
+def hash_password(password: str) -> str:
+    """Hash a password using SHA256 with salt."""
+    salt = secrets.token_hex(16)
+    pwd_hash = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
+    return f"{salt}${pwd_hash.hex()}"
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    """Verify a password against its hash."""
+    try:
+        salt, pwd_hash = password_hash.split('$')
+        new_hash = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
+        return new_hash.hex() == pwd_hash
+    except:
+        return False
+
+
+# ==================== UTILITIES ====================
+
+def generate_family_code() -> str:
+    """Generate a unique 6-character family code."""
+    import string
+    chars = string.ascii_uppercase + string.digits
+    return ''.join(secrets.choice(chars) for _ in range(6))
+
+
+def delete_all_data():
+    """Delete all data from database (for testing/reset only)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("DELETE FROM water_log")
+        cursor.execute("DELETE FROM nutrition_log")
+        cursor.execute("DELETE FROM daily_summary")
+        cursor.execute("DELETE FROM settings")
+        cursor.execute("DELETE FROM users")
+        cursor.execute("DELETE FROM families")
+        conn.commit()
+        print("✅ All data deleted successfully!")
+        return True
+    except sqlite3.Error as e:
+        print(f"❌ Error deleting data: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+if __name__ == "__main__":
+    # Initialize database when module is run directly
+    init_db()
+    print("Database module loaded successfully!")
