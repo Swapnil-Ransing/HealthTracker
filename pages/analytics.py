@@ -14,6 +14,7 @@ import plotly.express as px
 from database import (
     get_user, get_daily_summaries_range, get_settings
 )
+from recommendations import generate_calculated_recommendations
 import pandas as pd
 
 
@@ -33,6 +34,19 @@ def analytics_page():
     if not user:
         st.error("User not found")
         return
+    
+    # Get calculated recommendations for reference lines
+    calculated_rec = generate_calculated_recommendations(user_id)
+    daily_calories_target = calculated_rec.get('daily_calories', 2000) if calculated_rec else 2000
+    exercise_calories_target = calculated_rec.get('exercise_calories', 500) if calculated_rec else 500
+    bmr = calculated_rec.get('bmr', 1500) if calculated_rec else 1500
+    protein_target = calculated_rec.get('protein_grams', 150) if calculated_rec else 150
+    carbs_target = calculated_rec.get('carbs_grams', 200) if calculated_rec else 200
+    fat_target = calculated_rec.get('fat_grams', 65) if calculated_rec else 65
+    fiber_target = calculated_rec.get('fiber_grams', 30) if calculated_rec else 30
+    
+    # Calculate net surplus target: daily_calories - exercise_calories - bmr
+    net_surplus_target = daily_calories_target - exercise_calories_target - bmr
     
     # Sidebar filters
     with st.sidebar:
@@ -93,10 +107,8 @@ def analytics_page():
     with tab1:
         st.subheader("Calorie Tracking")
         
-        # Get target calories from settings
-        target_calories = settings.get('recommended_daily_calories', 2000)
-        if target_calories == 0:
-            target_calories = 2000  # Default if not set
+        # Use calculated daily calories target
+        target_calories = daily_calories_target
         
         col1, col2 = st.columns(2)
         
@@ -122,12 +134,22 @@ def analytics_page():
                 marker=dict(size=6)
             ))
             
-            # Add target line
+            # Add reference lines
             fig.add_hline(
                 y=target_calories,
                 line_dash="dash",
-                line_color="blue",
-                annotation_text=f"Target: {target_calories:.0f}",
+                line_color="rgba(100, 150, 255, 0.5)",
+                line_width=1.5,
+                annotation_text=f"Eat Target: {target_calories:.0f}",
+                annotation_position="right"
+            )
+            
+            fig.add_hline(
+                y=exercise_calories_target,
+                line_dash="dot",
+                line_color="rgba(100, 200, 100, 0.5)",
+                line_width=1.5,
+                annotation_text=f"Burn Target: {exercise_calories_target:.0f}",
                 annotation_position="right"
             )
             
@@ -143,10 +165,10 @@ def analytics_page():
             st.plotly_chart(fig, width='stretch')
         
         with col2:
-            # Net calories bar chart
-            df['net_calories'] = df['calories_consumed'] - (df['calories_gym'] + df['calories_walk'])
+            # Net calories bar chart with net surplus target reference
+            df['net_calories'] = df['calories_consumed'] - (df['calories_gym'] + df['calories_walk']) - bmr
             
-            colors = ['#51CF66' if x < 0 else '#FF6B6B' for x in df['net_calories']]
+            colors = ['#51CF66' if x < net_surplus_target else '#FF6B6B' for x in df['net_calories']]
             
             fig = go.Figure()
             
@@ -159,8 +181,18 @@ def analytics_page():
                 textposition='auto'
             ))
             
+            # Add reference line for net surplus target
+            fig.add_hline(
+                y=net_surplus_target,
+                line_dash="dash",
+                line_color="rgba(255, 150, 100, 0.5)",
+                line_width=1.5,
+                annotation_text=f"Target: {net_surplus_target:.0f}",
+                annotation_position="right"
+            )
+            
             fig.update_layout(
-                title="Daily Net Calories",
+                title="Daily Net Calories (after BMR)",
                 xaxis_title="Date",
                 yaxis_title="Net Calories (kcal)",
                 hovermode='x',
@@ -176,18 +208,19 @@ def analytics_page():
         
         avg_consumed = df['calories_consumed'].mean()
         avg_burned = (df['calories_gym'] + df['calories_walk']).mean()
-        avg_net = (df['calories_consumed'] - (df['calories_gym'] + df['calories_walk'])).mean()
+        avg_net = (df['calories_consumed'] - (df['calories_gym'] + df['calories_walk']) - bmr).mean()
         
         with col1:
             st.metric("Avg Consumed", f"{avg_consumed:.0f} kcal", 
-                     delta=f"{avg_consumed - target_calories:+.0f} vs target")
+                     delta=f"{avg_consumed - daily_calories_target:+.0f} vs {daily_calories_target:.0f}")
         
         with col2:
-            st.metric("Avg Burned", f"{avg_burned:.0f} kcal")
+            st.metric("Avg Burned", f"{avg_burned:.0f} kcal",
+                     delta=f"{avg_burned - exercise_calories_target:+.0f} vs {exercise_calories_target:.0f}")
         
         with col3:
             st.metric("Avg Net", f"{avg_net:.0f} kcal",
-                     delta="Deficit" if avg_net < 0 else "Surplus")
+                     delta=f"{avg_net - net_surplus_target:+.0f} vs {net_surplus_target:.0f}")
     
     with tab2:
         st.subheader("Weight Progress")
@@ -299,7 +332,7 @@ def analytics_page():
             col1, col2 = st.columns(2)
             
             with col1:
-                # Macro trend
+                # Macro trend with reference lines
                 fig = go.Figure()
                 
                 fig.add_trace(go.Scatter(
@@ -323,8 +356,53 @@ def analytics_page():
                     mode='lines+markers'
                 ))
                 
+                fig.add_trace(go.Scatter(
+                    x=df_with_macros['date'].dt.strftime('%Y-%m-%d'),
+                    y=df_with_macros['fiber'],
+                    name='Fiber',
+                    mode='lines+markers',
+                    line=dict(dash='dot')
+                ))
+                
+                # Add light reference lines for targets
+                fig.add_hline(
+                    y=protein_target,
+                    line_dash="dash",
+                    line_color="rgba(255, 100, 100, 0.4)",
+                    line_width=1,
+                    annotation_text=f"Protein: {protein_target:.0f}g",
+                    annotation_position="right"
+                )
+                
+                fig.add_hline(
+                    y=carbs_target,
+                    line_dash="dash",
+                    line_color="rgba(100, 150, 255, 0.4)",
+                    line_width=1,
+                    annotation_text=f"Carbs: {carbs_target:.0f}g",
+                    annotation_position="right"
+                )
+                
+                fig.add_hline(
+                    y=fat_target,
+                    line_dash="dash",
+                    line_color="rgba(255, 200, 100, 0.4)",
+                    line_width=1,
+                    annotation_text=f"Fat: {fat_target:.0f}g",
+                    annotation_position="right"
+                )
+                
+                fig.add_hline(
+                    y=fiber_target,
+                    line_dash="dash",
+                    line_color="rgba(100, 200, 100, 0.4)",
+                    line_width=1,
+                    annotation_text=f"Fiber: {fiber_target:.0f}g",
+                    annotation_position="right"
+                )
+                
                 fig.update_layout(
-                    title="Macronutrient Trends",
+                    title="Macronutrient Breakdown (with targets)",
                     xaxis_title="Date",
                     yaxis_title="Grams (g)",
                     hovermode='x unified',
@@ -353,17 +431,25 @@ def analytics_page():
                 
                 st.plotly_chart(fig, width='stretch')
             
-            # Macro stats
-            col1, col2, col3 = st.columns(3)
+            # Macro stats with targets
+            col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                st.metric("Avg Protein", f"{avg_protein:.0f}g")
+                st.metric("Avg Protein", f"{avg_protein:.0f}g",
+                         delta=f"{avg_protein - protein_target:+.0f}g vs {protein_target:.0f}g")
             
             with col2:
-                st.metric("Avg Carbs", f"{avg_carbs:.0f}g")
+                st.metric("Avg Carbs", f"{avg_carbs:.0f}g",
+                         delta=f"{avg_carbs - carbs_target:+.0f}g vs {carbs_target:.0f}g")
             
             with col3:
-                st.metric("Avg Fat", f"{avg_fat:.0f}g")
+                st.metric("Avg Fat", f"{avg_fat:.0f}g",
+                         delta=f"{avg_fat - fat_target:+.0f}g vs {fat_target:.0f}g")
+            
+            with col4:
+                avg_fiber = df_with_macros['fiber'].mean() if 'fiber' in df_with_macros.columns else 0
+                st.metric("Avg Fiber", f"{avg_fiber:.0f}g",
+                         delta=f"{avg_fiber - fiber_target:+.0f}g vs {fiber_target:.0f}g")
     
     with tab4:
         st.subheader("Hydration Tracking")
