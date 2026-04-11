@@ -9,17 +9,17 @@ sys.path.insert(0, 'db')
 sys.path.insert(0, 'utils')
 
 from datetime import datetime, timedelta
-from database import (
+from db.database import (
     get_user, get_daily_summary, update_daily_summary_activity,
     update_daily_summary_weight, update_daily_summary_cheat_day,
     create_daily_summary_if_needed, get_settings
 )
-from calculations import (
+from utils.calculations import (
     calculate_calories_burned_gym,
     calculate_calories_burned_walking,
     calculate_calorie_deficit
 )
-from recommendations import generate_calculated_recommendations
+from utils.recommendations import generate_calculated_recommendations
 
 
 def activity_weight_logger_page():
@@ -102,7 +102,7 @@ def activity_weight_logger_page():
         
         # Show today's gym activities
         if daily_summary:
-            if daily_summary.get('calories_gym', 0) > 0:
+            if (daily_summary.get('calories_gym') or 0) > 0:
                 st.info(f"📈 **Today's Gym Total:** {daily_summary['calories_gym']:.0f} kcal burned")
     
     with tab2:
@@ -155,7 +155,7 @@ def activity_weight_logger_page():
         
         # Show today's walk activities
         if daily_summary:
-            if daily_summary.get('calories_walk', 0) > 0:
+            if (daily_summary.get('calories_walk') or 0) > 0:
                 st.info(f"📈 **Today's Walking Total:** {daily_summary['calories_walk']:.0f} kcal burned")
     
     with tab3:

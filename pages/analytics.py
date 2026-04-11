@@ -5,17 +5,15 @@ Provides comprehensive visualizations of health data including calories, weight,
 
 import streamlit as st
 import sys
-sys.path.insert(0, 'db')
-sys.path.insert(0, 'utils')
 
 from datetime import datetime, timedelta
 import plotly.graph_objects as go
 import plotly.express as px
-from database import (
+from db.database import (
     get_user, get_daily_summaries_range, get_settings
 )
-from recommendations import generate_calculated_recommendations
-from gpt_utils import generate_performance_insights
+from utils.recommendations import generate_calculated_recommendations
+from utils.gpt_utils import generate_performance_insights
 import pandas as pd
 
 
@@ -91,8 +89,21 @@ def analytics_page():
     
     # Convert to DataFrame
     df = pd.DataFrame([dict(row) for row in data])
-    df['date'] = pd.to_datetime(df['date'])
+
+    # 1. Convert to datetime objects FIRST
+    df['date'] = pd.to_datetime(df['date']) 
+
+    # 2. Sort the values so the graph lines connect in the right order
     df = df.sort_values('date')
+
+    # 3. Fill missing numeric values with 0 to prevent "zero-line" or empty graph issues
+    numeric_cols = ['calories_consumed', 'calories_gym', 'calories_walk', 'protein', 'carbs', 'fat', 'fiber']
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col]).fillna(0)
+
+    # 4. Now create the string version for the X-axis labels
+    df['date_str'] = df['date'].dt.strftime('%Y-%m-%d')
     
     st.divider()
     

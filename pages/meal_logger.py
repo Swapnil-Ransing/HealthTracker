@@ -9,12 +9,12 @@ import sys
 sys.path.insert(0, 'db')
 sys.path.insert(0, 'utils')
 
-from database import (
+from db.database import (
     log_meal, get_meals_by_date, delete_meal, save_daily_summary,
-    get_daily_summary, get_settings
+    get_daily_summary, get_settings, update_meal
 )
-from gpt_utils import calculate_nutrition_for_multiple_meals
-from calculations import calculate_macronutrient_percentages
+from utils.gpt_utils import calculate_nutrition_for_multiple_meals
+from utils.calculations import calculate_macronutrient_percentages
 
 
 def meal_logger_page():
@@ -151,22 +151,19 @@ def meal_logger_page():
                         
                         if result['success_count'] > 0:
                             # Update meals in database with GPT results
-                            from database import get_db_connection
-                            
                             for i, nutrition in enumerate(result['meal_details']):
                                 if i < len(meal_ids_to_update):
                                     meal_id = meal_ids_to_update[i]
-                                    
-                                    conn = get_db_connection()
-                                    cursor = conn.cursor()
-                                    cursor.execute("""
-                                        UPDATE nutrition_log
-                                        SET calories = ?, protein = ?, carbs = ?, fat = ?, fiber = ?
-                                        WHERE id = ?
-                                    """, (nutrition['calories'], nutrition['protein'], nutrition['carbs'], 
-                                          nutrition['fat'], nutrition['fiber'], meal_id))
-                                    conn.commit()
-                                    conn.close()
+                                    success = update_meal(
+                                        meal_id,
+                                        calories=nutrition['calories'],
+                                        protein=nutrition['protein'],
+                                        carbs=nutrition['carbs'],
+                                        fat=nutrition['fat'],
+                                        fiber=nutrition['fiber']
+                                    )
+                                    if not success:
+                                        st.warning(f"⚠️ Failed to update meal {meal_id}")
                             
                             st.success(f"✅ Analyzed {result['success_count']} meals!")
                             
@@ -227,10 +224,9 @@ def meal_logger_page():
                     st.markdown(f"- Total Fiber: {total_fiber}g")
                 
                 # Save daily summary button
+                # In meal_logger.py - Around line 170
                 if st.button("💾 Save Daily Summary", width='stretch', key="save_summary_btn"):
-                    settings = get_settings(user_id)
-                    calorie_deficit_constant = settings['calorie_deficit_constant'] if settings else 500
-                    
+                    # Pass only the nutritional values we have
                     save_daily_summary(
                         user_id=user_id,
                         date=selected_date_str,

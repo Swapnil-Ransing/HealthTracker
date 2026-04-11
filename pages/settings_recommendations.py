@@ -8,8 +8,8 @@ import sys
 sys.path.insert(0, 'db')
 sys.path.insert(0, 'utils')
 
-from database import get_user, get_settings, update_settings, update_user_profile
-from recommendations import (
+from db.database import get_user, get_settings, update_settings, update_user_profile
+from utils.recommendations import (
     generate_calculated_recommendations,
     generate_gpt_recommendations,
     save_recommendations,
@@ -17,7 +17,7 @@ from recommendations import (
     update_user_profile_preferences,
     get_active_recommendations
 )
-from calculations import calculate_macronutrient_percentages
+from utils.calculations import calculate_macronutrient_percentages
 
 
 def settings_recommendations_page():

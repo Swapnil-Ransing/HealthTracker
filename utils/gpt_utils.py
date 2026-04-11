@@ -7,15 +7,22 @@ import os
 import json
 import re
 from typing import Optional, Dict, Tuple
-from dotenv import load_dotenv
+# from dotenv import load_dotenv
 from openai import OpenAI
 from openai import RateLimitError, APIError, AuthenticationError
+import streamlit as st
 
-load_dotenv()
+# load_dotenv()
+def get_secret(key):
+    try:
+        return st.secrets[key]
+    except:
+        return os.getenv(key)
 
 # Configure OpenAI API
-api_key = os.getenv("OPENAI_API_KEY", "")
-client = OpenAI(api_key=api_key) if api_key else None
+# api_key = os.getenv("OPENAI_API_KEY", "")
+# client = OpenAI(api_key=api_key) if api_key else None
+client = OpenAI(api_key=get_secret("OPENAI_API_KEY"))
 MODEL = "gpt-3.5-turbo"
 
 # Meal cache to avoid repeated API calls for same meals

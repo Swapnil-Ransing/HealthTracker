@@ -9,11 +9,11 @@ import sys
 sys.path.insert(0, 'db')
 sys.path.insert(0, 'utils')
 
-from database import (
+from db.database import (
     log_water, get_water_log_by_date, get_total_water_by_date,
-    get_settings, update_settings, save_daily_summary, get_daily_summary
+    get_settings, update_settings, save_daily_summary, get_daily_summary, delete_water_log
 )
-from calculations import get_hydration_status
+from utils.calculations import get_hydration_status
 
 
 def water_tracker_page():
@@ -41,10 +41,20 @@ def water_tracker_page():
     
     selected_date_str = selected_date.strftime('%Y-%m-%d')
     st.divider()
+
+    # --- NEW HELPER FUNCTION TO SYNC DATA TO ANALYTICS ---
+    def sync_water_to_summary():
+        """Aggregates water logs and updates the daily_summary table for Analytics."""
+        current_total = get_total_water_by_date(user_id, selected_date_str)
+        save_daily_summary(
+            user_id=user_id, 
+            date=selected_date_str, 
+            water_intake_liters=current_total
+        )
     
     # Get user settings
     settings = get_settings(user_id)
-    daily_water_goal = settings['daily_water_goal_liters'] if settings else 3.0
+    daily_water_goal = float(settings.get('daily_water_goal_liters', 3.0))
     
     # Get today's water intake
     total_water = get_total_water_by_date(user_id, selected_date_str)
@@ -111,6 +121,7 @@ def water_tracker_page():
                     )
                     
                     if water_id:
+                        sync_water_to_summary()  # Sync to Daily Summary
                         st.success(f"✅ Added {label}!")
                         st.balloons()
                         st.rerun()
@@ -137,6 +148,7 @@ def water_tracker_page():
             )
             
             if water_id:
+                sync_water_to_summary()  # Sync to Daily Summary
                 st.success(f"✅ Added {custom_amount}L!")
                 st.rerun()
     
@@ -171,6 +183,7 @@ def water_tracker_page():
             )
             
             if water_id:
+                sync_water_to_summary()  # Sync to Daily Summary
                 st.success(f"✅ Logged {manual_amount}L at {manual_time.strftime('%H:%M')}")
                 st.rerun()
     
@@ -196,14 +209,12 @@ def water_tracker_page():
                 
                 with col3:
                     if st.button("🗑️", key=f"delete_water_{entry['id']}", help="Delete entry"):
-                        from database import get_db_connection
-                        conn = get_db_connection()
-                        cursor = conn.cursor()
-                        cursor.execute("DELETE FROM water_log WHERE id = ?", (entry['id'],))
-                        conn.commit()
-                        conn.close()
-                        st.success("Entry deleted")
-                        st.rerun()
+                        if delete_water_log(entry['id']):
+                            sync_water_to_summary()  # Sync to Daily Summary after deletion
+                            st.success("Entry deleted")
+                            st.rerun()
+                        else:
+                            st.error("Failed to delete entry")
             
             st.divider()
             st.markdown(f"**Daily Total: {total_water}L**")
@@ -227,7 +238,8 @@ def water_tracker_page():
     
     with col2:
         if st.button("💾 Update Goal", width='stretch', key="water_goal_btn"):
-            if update_settings(user_id, water_goal=new_daily_goal):
+            # Updated key to match database expected column
+            if update_settings(user_id, daily_water_goal_liters=new_daily_goal):
                 st.success(f"✅ Daily water goal updated to {new_daily_goal}L")
                 st.rerun()
 

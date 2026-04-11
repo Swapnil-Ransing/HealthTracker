@@ -7,7 +7,7 @@ from datetime import datetime
 load_dotenv()
 
 # Import database initialization
-from db.database import init_db, get_user, get_settings, get_family_members, migrate_db
+from db.database import get_user, get_settings, get_family_members
 
 # Import authentication functions
 from utils.auth import register_user, login_user, get_user_info
@@ -33,16 +33,6 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
-
-# Initialize database on first run
-if not os.path.exists("db/data.db"):
-    init_db()
-else:
-    # Run migrations on existing databases
-    try:
-        migrate_db()
-    except:
-        pass  # Continue even if migration fails
 
 # Initialize session state
 if 'user_id' not in st.session_state:
