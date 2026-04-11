@@ -219,6 +219,135 @@ def get_cache_stats():
     }
 
 
+def generate_performance_insights(user_name: str, recommendations: Dict, daily_summaries: list, time_range_days: int = 7) -> Tuple[bool, Optional[str]]:
+    """
+    Generate personalized AI insights based on user performance data.
+    
+    Args:
+        user_name: User's name
+        recommendations: Calculated recommendations dict with targets
+        daily_summaries: List of daily summary records from the selected time range
+        time_range_days: Number of days being analyzed
+    
+    Returns:
+        (success: bool, insights: str or None)
+    """
+    
+    if not client:
+        return (False, "OpenAI API not configured")
+    
+    if not daily_summaries:
+        return (False, "No data available for insights")
+    
+    try:
+        # Calculate performance metrics
+        daily_calories_target = recommendations.get('daily_calories', 2000)
+        exercise_calories_target = recommendations.get('exercise_calories', 500)
+        bmr = recommendations.get('bmr', 1500)
+        protein_target = recommendations.get('protein_grams', 150)
+        carbs_target = recommendations.get('carbs_grams', 200)
+        fat_target = recommendations.get('fat_grams', 65)
+        fiber_target = recommendations.get('fiber_grams', 30)
+        
+        # Convert daily summaries to list of dicts if needed
+        summaries_data = [dict(row) if hasattr(row, '__iter__') and not isinstance(row, dict) else row for row in daily_summaries]
+        
+        total_days = len(summaries_data)
+        
+        # Calculate averages
+        avg_calories_consumed = sum(s.get('calories_consumed', 0) for s in summaries_data) / total_days if total_days > 0 else 0
+        avg_calories_burned = sum(s.get('calories_gym', 0) + s.get('calories_walk', 0) for s in summaries_data) / total_days if total_days > 0 else 0
+        avg_protein = sum(s.get('protein', 0) for s in summaries_data) / total_days if total_days > 0 else 0
+        avg_carbs = sum(s.get('carbs', 0) for s in summaries_data) / total_days if total_days > 0 else 0
+        avg_fat = sum(s.get('fat', 0) for s in summaries_data) / total_days if total_days > 0 else 0
+        avg_fiber = sum(s.get('fiber', 0) for s in summaries_data) / total_days if total_days > 0 else 0
+        avg_water = sum(s.get('water_intake_liters', 0) for s in summaries_data) / total_days if total_days > 0 else 0
+        
+        # Count days on track
+        days_calories_on_track = sum(1 for s in summaries_data if abs(s.get('calories_consumed', 0) - daily_calories_target) <= daily_calories_target * 0.1)  # Within 10%
+        days_exercise_on_track = sum(1 for s in summaries_data if s.get('calories_gym', 0) + s.get('calories_walk', 0) >= exercise_calories_target * 0.8)  # At least 80%
+        
+        # Calculate net surplus (consumed - burned - bmr)
+        net_values = [s.get('calories_consumed', 0) - (s.get('calories_gym', 0) + s.get('calories_walk', 0)) - bmr for s in summaries_data]
+        avg_net = sum(net_values) / total_days if total_days > 0 else 0
+        
+        # Weight progress
+        weight_records = [s for s in summaries_data if s.get('weight', 0) > 0]
+        weight_change = 0
+        if len(weight_records) >= 2:
+            weight_change = weight_records[-1].get('weight', 0) - weight_records[0].get('weight', 0)
+        
+        # Build data summary for GPT
+        data_summary = f"""
+User Performance Analysis (Last {time_range_days} days):
+
+TARGETS:
+- Daily Calorie Intake: {daily_calories_target:.0f} kcal
+- Exercise/Burn Target: {exercise_calories_target:.0f} kcal
+- Protein Target: {protein_target:.0f}g
+- Carbs Target: {carbs_target:.0f}g
+- Fat Target: {fat_target:.0f}g
+- Fiber Target: {fiber_target:.0f}g
+- BMR: {bmr:.0f} kcal
+
+ACTUAL PERFORMANCE:
+- Average Calories Consumed: {avg_calories_consumed:.0f} kcal ({(avg_calories_consumed/daily_calories_target*100):.0f}% of target)
+- Average Calories Burned: {avg_calories_burned:.0f} kcal ({(avg_calories_burned/exercise_calories_target*100):.0f}% of target)
+- Average Protein: {avg_protein:.0f}g ({(avg_protein/protein_target*100):.0f}% of target)
+- Average Carbs: {avg_carbs:.0f}g ({(avg_carbs/carbs_target*100):.0f}% of target)
+- Average Fat: {avg_fat:.0f}g ({(avg_fat/fat_target*100):.0f}% of target)
+- Average Fiber: {avg_fiber:.0f}g ({(avg_fiber/fiber_target*100):.0f}% of target)
+- Average Water Intake: {avg_water:.1f}L
+- Average Daily Net Surplus/Deficit: {avg_net:.0f} kcal
+- Days On Track (Calories): {days_calories_on_track}/{total_days}
+- Days On Track (Exercise): {days_exercise_on_track}/{total_days}
+- Weight Change: {weight_change:+.1f} kg
+"""
+        
+        # Create GPT prompt for insights
+        prompt = f"""You are a supportive and knowledgeable fitness coach analyzing {user_name}'s performance data.
+
+{data_summary}
+
+Please provide:
+1. **Performance Summary** (1-2 sentences): Overall assessment of how they're doing
+2. **Strengths** (2-3 bullet points): What they're doing well and should continue
+3. **Areas for Improvement** (2-3 bullet points): Where they can optimize (be specific and actionable)
+4. **This Week's Focus** (2-3 specific, actionable recommendations with concrete numbers/actions)
+5. **Encouragement** (1-2 sentences): Motivational message tailored to their progress
+
+Make the tone encouraging, specific, and actionable. Use their actual data. Be realistic and supportive."""
+        
+        # Call OpenAI API
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an enthusiastic and supportive fitness coach who provides personalized, actionable health insights. Be encouraging, specific, and realistic. Use the provided data to tailor your response."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            temperature=0.7,  # Slightly higher for more personalized tone
+            max_tokens=600
+        )
+        
+        insights = response.choices[0].message.content.strip()
+        return (True, insights)
+        
+    except RateLimitError:
+        return (False, "API rate limit reached. Please try again in a moment.")
+    except AuthenticationError:
+        return (False, "API authentication failed. Check your API key.")
+    except APIError as e:
+        return (False, f"API error: {str(e)}")
+    except Exception as e:
+        return (False, f"Error generating insights: {str(e)}")
+
+
 def validate_api_key() -> bool:
     """Validate that OpenAI API key is configured."""
     api_key = os.getenv("OPENAI_API_KEY", "")

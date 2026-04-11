@@ -15,6 +15,7 @@ from database import (
     get_user, get_daily_summaries_range, get_settings
 )
 from recommendations import generate_calculated_recommendations
+from gpt_utils import generate_performance_insights
 import pandas as pd
 
 
@@ -96,12 +97,13 @@ def analytics_page():
     st.divider()
     
     # Tabs for different visualizations
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📈 Calories",
         "⚖️ Weight",
         "🥗 Macros",
         "💧 Hydration",
-        "📊 Summary Stats"
+        "📊 Summary Stats",
+        "🧠 Insights"
     ])
     
     with tab1:
@@ -110,98 +112,126 @@ def analytics_page():
         # Use calculated daily calories target
         target_calories = daily_calories_target
         
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Calorie consumption vs burned line chart
-            fig = go.Figure()
-            
-            fig.add_trace(go.Scatter(
-                x=df['date'].dt.strftime('%Y-%m-%d'),
+        colA, colB = st.columns(2)
+        df['date_str'] = df['date'].dt.strftime('%Y-%m-%d')
+
+        # ---- Calories Consumed ----
+        with colA:
+            fig_consumed = go.Figure()
+
+            fig_consumed.add_trace(go.Scatter(
+                x=df['date_str'],
                 y=df['calories_consumed'],
                 name='Consumed',
                 mode='lines+markers',
                 line=dict(color='#FF6B6B', width=2),
                 marker=dict(size=6)
             ))
+
+            fig_consumed.add_hline(
+                y=target_calories,
+                line_dash="dash",
+                line_color="#FF6B6B",
+                line_width=1.5,
+                annotation_text=f"Target: {target_calories:.0f}",
+                annotation_position="right",
+                annotation=dict(
+                    font=dict(size=12, color="#FF6B6B"),
+                    bgcolor="rgba(255,255,255,0.7)"
+                )
+            )
+
+            fig_consumed.update_layout(
+                title="Daily Calories Consumed",
+                xaxis_title="Date",
+                yaxis_title="Calories (kcal)",
+                hovermode='x unified',
+                height=300,
+                template='plotly_white'
+            )
+
+            st.plotly_chart(fig_consumed, width='stretch')
             
-            fig.add_trace(go.Scatter(
-                x=df['date'].dt.strftime('%Y-%m-%d'),
-                y=df['calories_gym'] + df['calories_walk'],
+        with colB:
+            # ---- Calories Burned ----
+            df['calories_burned'] = df['calories_gym'] + df['calories_walk']
+
+            fig_burned = go.Figure()
+
+            fig_burned.add_trace(go.Scatter(
+                x=df['date_str'],
+                y=df['calories_burned'],
                 name='Burned',
                 mode='lines+markers',
                 line=dict(color='#51CF66', width=2),
                 marker=dict(size=6)
             ))
-            
-            # Add reference lines
-            fig.add_hline(
-                y=target_calories,
-                line_dash="dash",
-                line_color="rgba(100, 150, 255, 0.5)",
-                line_width=1.5,
-                annotation_text=f"Eat Target: {target_calories:.0f}",
-                annotation_position="right"
-            )
-            
-            fig.add_hline(
+
+            fig_burned.add_hline(
                 y=exercise_calories_target,
-                line_dash="dot",
-                line_color="rgba(100, 200, 100, 0.5)",
+                line_dash="dash",
+                line_color="#51CF66",
                 line_width=1.5,
-                annotation_text=f"Burn Target: {exercise_calories_target:.0f}",
-                annotation_position="right"
+                annotation_text=f"Target: {exercise_calories_target:.0f}",
+                annotation_position="right",
+                annotation=dict(
+                    font=dict(size=12, color="#51CF66"),
+                    bgcolor="rgba(255,255,255,0.7)"
+                )
             )
-            
-            fig.update_layout(
-                title="Daily Calories: Consumed vs Burned",
+
+            fig_burned.update_layout(
+                title="Daily Calories Burned",
                 xaxis_title="Date",
                 yaxis_title="Calories (kcal)",
                 hovermode='x unified',
-                height=400,
+                height=300,
                 template='plotly_white'
             )
-            
-            st.plotly_chart(fig, width='stretch')
+
+            st.plotly_chart(fig_burned, width='stretch')
         
-        with col2:
-            # Net calories bar chart with net surplus target reference
-            df['net_calories'] = df['calories_consumed'] - (df['calories_gym'] + df['calories_walk']) - bmr
-            
-            colors = ['#51CF66' if x < net_surplus_target else '#FF6B6B' for x in df['net_calories']]
-            
-            fig = go.Figure()
-            
-            fig.add_trace(go.Bar(
-                x=df['date'].dt.strftime('%Y-%m-%d'),
-                y=df['net_calories'],
-                marker=dict(color=colors),
-                name='Net Calories',
-                text=[f"{x:.0f}" for x in df['net_calories']],
-                textposition='auto'
-            ))
-            
-            # Add reference line for net surplus target
-            fig.add_hline(
-                y=net_surplus_target,
-                line_dash="dash",
-                line_color="rgba(255, 150, 100, 0.5)",
-                line_width=1.5,
-                annotation_text=f"Target: {net_surplus_target:.0f}",
-                annotation_position="right"
+        # Net calories bar chart with net surplus target reference
+        df['net_calories'] = df['calories_consumed'] - (df['calories_gym'] + df['calories_walk']) - bmr
+        
+        colors = ['#51CF66' if x < net_surplus_target else '#FF6B6B' for x in df['net_calories']]
+        
+        fig = go.Figure()
+        
+        fig.add_trace(go.Bar(
+            x=df['date'].dt.strftime('%Y-%m-%d'),
+            y=df['net_calories'],
+            marker=dict(color=colors),
+            name='Net Calories',
+            text=[f"{x:.0f}" for x in df['net_calories']],
+            textposition='auto'
+        ))
+        
+        # Add reference line for net surplus target
+        fig.add_hline(
+            y=net_surplus_target,
+            line_dash="dash",
+            line_color="#51CF66",
+            line_width=1.5,
+            annotation_text=f"Target: {net_surplus_target:.0f}",
+            annotation_position="right",
+            annotation=dict(
+                font=dict(size=12, color="#51CF66"),
+                bgcolor="rgba(255,255,255,0.7)"
             )
-            
-            fig.update_layout(
-                title="Daily Net Calories (after BMR)",
-                xaxis_title="Date",
-                yaxis_title="Net Calories (kcal)",
-                hovermode='x',
-                height=400,
-                template='plotly_white',
-                showlegend=False
-            )
-            
-            st.plotly_chart(fig, width='stretch')
+        )
+        
+        fig.update_layout(
+            title="Daily Net Calories (after BMR)",
+            xaxis_title="Date",
+            yaxis_title="Net Calories (kcal)",
+            hovermode='x',
+            height=400,
+            template='plotly_white',
+            showlegend=False
+        )
+        
+        st.plotly_chart(fig, width='stretch')
         
         # Calories breakdown
         col1, col2, col3 = st.columns(3)
@@ -322,135 +352,110 @@ def analytics_page():
     
     with tab3:
         st.subheader("Macronutrient Breakdown")
-        
-        # Average macros
+
         df_with_macros = df[df['protein'] > 0].copy()
-        
+
         if len(df_with_macros) == 0:
             st.warning("⚠️ No macro data available yet")
         else:
+            # Create formatted date once
+            df_with_macros['date_str'] = df_with_macros['date'].dt.strftime('%Y-%m-%d')
+
+            # ---- ROW 1 ----
             col1, col2 = st.columns(2)
-            
+
             with col1:
-                # Macro trend with reference lines
-                fig = go.Figure()
-                
-                fig.add_trace(go.Scatter(
-                    x=df_with_macros['date'].dt.strftime('%Y-%m-%d'),
+                # Protein
+                fig_protein = go.Figure()
+                fig_protein.add_trace(go.Scatter(
+                    x=df_with_macros['date_str'],
                     y=df_with_macros['protein'],
-                    name='Protein',
-                    mode='lines+markers'
-                ))
-                
-                fig.add_trace(go.Scatter(
-                    x=df_with_macros['date'].dt.strftime('%Y-%m-%d'),
-                    y=df_with_macros['carbs'],
-                    name='Carbs',
-                    mode='lines+markers'
-                ))
-                
-                fig.add_trace(go.Scatter(
-                    x=df_with_macros['date'].dt.strftime('%Y-%m-%d'),
-                    y=df_with_macros['fat'],
-                    name='Fat',
-                    mode='lines+markers'
-                ))
-                
-                fig.add_trace(go.Scatter(
-                    x=df_with_macros['date'].dt.strftime('%Y-%m-%d'),
-                    y=df_with_macros['fiber'],
-                    name='Fiber',
                     mode='lines+markers',
-                    line=dict(dash='dot')
+                    line=dict(color="#F01C1C", width=2)
                 ))
-                
-                # Add light reference lines for targets
-                fig.add_hline(
-                    y=protein_target,
-                    line_dash="dash",
-                    line_color="rgba(255, 100, 100, 0.4)",
-                    line_width=1,
-                    annotation_text=f"Protein: {protein_target:.0f}g",
-                    annotation_position="right"
-                )
-                
-                fig.add_hline(
-                    y=carbs_target,
-                    line_dash="dash",
-                    line_color="rgba(100, 150, 255, 0.4)",
-                    line_width=1,
-                    annotation_text=f"Carbs: {carbs_target:.0f}g",
-                    annotation_position="right"
-                )
-                
-                fig.add_hline(
-                    y=fat_target,
-                    line_dash="dash",
-                    line_color="rgba(255, 200, 100, 0.4)",
-                    line_width=1,
-                    annotation_text=f"Fat: {fat_target:.0f}g",
-                    annotation_position="right"
-                )
-                
-                fig.add_hline(
-                    y=fiber_target,
-                    line_dash="dash",
-                    line_color="rgba(100, 200, 100, 0.4)",
-                    line_width=1,
-                    annotation_text=f"Fiber: {fiber_target:.0f}g",
-                    annotation_position="right"
-                )
-                
-                fig.update_layout(
-                    title="Macronutrient Breakdown (with targets)",
-                    xaxis_title="Date",
-                    yaxis_title="Grams (g)",
-                    hovermode='x unified',
-                    height=400,
-                    template='plotly_white'
-                )
-                
-                st.plotly_chart(fig, width='stretch')
-            
+                fig_protein.add_hline(y=protein_target, line_dash="dash", line_color="#F01C1C",
+                                      annotation_text=f"{protein_target:.0f}g target",
+                                      annotation_position="right")
+                fig_protein.update_layout(title="Protein", height=300, template='plotly_white')
+
+                st.plotly_chart(fig_protein, width='stretch')
+
             with col2:
-                # Average macro pie chart
-                avg_protein = df_with_macros['protein'].mean()
-                avg_carbs = df_with_macros['carbs'].mean()
-                avg_fat = df_with_macros['fat'].mean()
-                
-                fig = go.Figure(data=[go.Pie(
-                    labels=['Protein', 'Carbs', 'Fat'],
-                    values=[avg_protein, avg_carbs, avg_fat],
-                    marker=dict(colors=['#FF6B6B', '#4ECDC4', '#FFE66D'])
-                )])
-                
-                fig.update_layout(
-                    title="Average Macro Distribution",
-                    height=400
-                )
-                
-                st.plotly_chart(fig, width='stretch')
-            
-            # Macro stats with targets
+                # Carbs
+                fig_carbs = go.Figure()
+                fig_carbs.add_trace(go.Scatter(
+                    x=df_with_macros['date_str'],
+                    y=df_with_macros['carbs'],
+                    mode='lines+markers',
+                    line=dict(color="#14F0E1", width=2)
+                ))
+                fig_carbs.add_hline(y=carbs_target, line_dash="dash", line_color="#14F0E1",
+                                    annotation_text=f"{carbs_target:.0f}g target",
+                                    annotation_position="right")
+                fig_carbs.update_layout(title="Carbs", height=300, template='plotly_white')
+
+                st.plotly_chart(fig_carbs, width='stretch')
+
+
+            # ---- ROW 2 ----
+            col3, col4 = st.columns(2)
+
+            with col3:
+                # Fat
+                fig_fat = go.Figure()
+                fig_fat.add_trace(go.Scatter(
+                    x=df_with_macros['date_str'],
+                    y=df_with_macros['fat'],
+                    mode='lines+markers',
+                    line=dict(color="#EBC60F", width=2)
+                ))
+                fig_fat.add_hline(y=fat_target, line_dash="dash", line_color="#EBC60F",
+                                  annotation_text=f"{fat_target:.0f}g target",
+                                  annotation_position="right")
+                fig_fat.update_layout(title="Fat", height=300, template='plotly_white')
+
+                st.plotly_chart(fig_fat, width='stretch')
+
+            with col4:
+                # Fiber
+                fig_fiber = go.Figure()
+                fig_fiber.add_trace(go.Scatter(
+                    x=df_with_macros['date_str'],
+                    y=df_with_macros['fiber'],
+                    mode='lines+markers',
+                    line=dict(color="#59F511", width=2)
+                ))
+                fig_fiber.add_hline(y=fiber_target, line_dash="dash", line_color="#59F511",
+                                    annotation_text=f"{fiber_target:.0f}g target",
+                                  annotation_position="right")
+                fig_fiber.update_layout(title="Fiber", height=300, template='plotly_white')
+
+                st.plotly_chart(fig_fiber, width='stretch')
+
+            # ---- Stats ----
+            avg_protein = df_with_macros['protein'].mean()
+            avg_carbs = df_with_macros['carbs'].mean()
+            avg_fat = df_with_macros['fat'].mean()
+            avg_fiber = df_with_macros['fiber'].mean()
+
             col1, col2, col3, col4 = st.columns(4)
-            
+
             with col1:
                 st.metric("Avg Protein", f"{avg_protein:.0f}g",
-                         delta=f"{avg_protein - protein_target:+.0f}g vs {protein_target:.0f}g")
-            
+                        delta=f"{avg_protein - protein_target:+.0f}g vs target")
+
             with col2:
                 st.metric("Avg Carbs", f"{avg_carbs:.0f}g",
-                         delta=f"{avg_carbs - carbs_target:+.0f}g vs {carbs_target:.0f}g")
-            
+                        delta=f"{avg_carbs - carbs_target:+.0f}g vs target")
+
             with col3:
                 st.metric("Avg Fat", f"{avg_fat:.0f}g",
-                         delta=f"{avg_fat - fat_target:+.0f}g vs {fat_target:.0f}g")
-            
+                        delta=f"{avg_fat - fat_target:+.0f}g vs target")
+
             with col4:
-                avg_fiber = df_with_macros['fiber'].mean() if 'fiber' in df_with_macros.columns else 0
                 st.metric("Avg Fiber", f"{avg_fiber:.0f}g",
-                         delta=f"{avg_fiber - fiber_target:+.0f}g vs {fiber_target:.0f}g")
-    
+                        delta=f"{avg_fiber - fiber_target:+.0f}g vs target")
+            
     with tab4:
         st.subheader("Hydration Tracking")
         
@@ -578,6 +583,84 @@ def analytics_page():
         with col3:
             total_exercise = (df['calories_gym'] > 0).sum() + (df['calories_walk'] > 0).sum()
             st.metric("Total Exercise Days", total_exercise)
+    
+    with tab6:
+        st.subheader("🧠 AI-Powered Insights")
+        st.markdown("Get personalized insights about your progress and actionable recommendations")
+
+        st.divider()
+
+        # Generate insights button
+        col1, col2, col3 = st.columns([1, 2, 1])
+
+        with col2:
+            if st.button("📊 Generate Insights", width='stretch', key="generate_insights_btn"):
+                with st.spinner("🤔 Analyzing your performance..."):
+
+                    # Get all data
+                    all_data = get_daily_summaries_range(
+                        user_id,
+                        "2020-01-01",
+                        str(datetime.now().date())
+                    )
+
+                    if all_data:
+
+                        # ✅ Clean None values
+                        cleaned_data = []
+                        for row in all_data:
+                            cleaned_row = {}
+                            for k, v in row.items():
+                                if isinstance(v, (int, float)):
+                                    cleaned_row[k] = v
+                                else:
+                                    cleaned_row[k] = 0  # Replace None/invalid with 0
+                            cleaned_data.append(cleaned_row)
+
+                        # ✅ Safe time range
+                        time_range_days = len(df) if df is not None else 0
+
+                        try:
+                            success, insights = generate_performance_insights(
+                                user_name=user['name'],
+                                recommendations=calculated_rec if calculated_rec else {},
+                                daily_summaries=cleaned_data,
+                                time_range_days=time_range_days
+                            )
+
+                            if success and insights:
+                                st.session_state.current_insights = insights
+                                st.success("✅ Insights generated!")
+                            else:
+                                st.error(f"❌ Unable to generate insights: {insights}")
+
+                        except Exception as e:
+                            st.error(f"❌ Error generating insights: {str(e)}")
+
+                    else:
+                        st.warning("❌ Need at least some data to generate insights")
+
+        st.divider()
+
+        # Display insights
+        if 'current_insights' in st.session_state and st.session_state.current_insights:
+
+            st.markdown("""
+            <div style="background-color: #f0f8ff; border-left: 4px solid #4ecdc4; 
+                        padding: 20px; border-radius: 5px;">
+            """, unsafe_allow_html=True)
+
+            st.markdown(st.session_state.current_insights)
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            # Export/info section
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                st.info("💡 Save these insights or share with your fitness coach for personalized guidance!")
+
+        else:
+            st.info("👈 Click 'Generate Insights' to get AI-powered analysis of your progress")
 
 
 if __name__ == "__main__":

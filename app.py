@@ -239,38 +239,44 @@ def show_dashboard():
     st.title(f"🏃 Welcome back, {st.session_state.user_name}!")
     
     # Tabs
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Dashboard", "Meal Logger", "Water Tracker", "Activity", "Analytics", "Settings & Goals", "📚 Guide"])
-    
+    # tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Dashboard", "Meal Logger", "Water Tracker", "Activity", "Analytics", "Settings & Goals", "📚 Guide"])
+    # Tabs (Dashboard removed + reordered)
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "Analytics",
+        "Meal Logger",
+        "Water Tracker",
+        "Activity",
+        "Settings & Goals",
+        "📚 Guide"
+    ])
+
+    # ---- Analytics ----
     with tab1:
-        st.info("📊 Dashboard - Coming in next phases")
-    
-    with tab2:
-        # Import and display meal logger
-        from pages.meal_logger import meal_logger_page
-        meal_logger_page()
-    
-    with tab3:
-        # Import and display water tracker
-        from pages.water_tracker import water_tracker_page
-        water_tracker_page()
-    
-    with tab4:
-        # Import and display activity & weight logger
-        from pages.activity_weight_logger import activity_weight_logger_page
-        activity_weight_logger_page()
-    
-    with tab5:
-        # Import and display analytics
         from pages.analytics import analytics_page
         analytics_page()
-    
-    with tab6:
-        # Import and display settings & recommendations
+
+    # ---- Meal Logger ----
+    with tab2:
+        from pages.meal_logger import meal_logger_page
+        meal_logger_page()
+
+    # ---- Water Tracker ----
+    with tab3:
+        from pages.water_tracker import water_tracker_page
+        water_tracker_page()
+
+    # ---- Activity ----
+    with tab4:
+        from pages.activity_weight_logger import activity_weight_logger_page
+        activity_weight_logger_page()
+
+    # ---- Settings ----
+    with tab5:
         from pages.settings_recommendations import settings_recommendations_page
         settings_recommendations_page()
-    
-    with tab7:
-        # Import and display recommendations guide
+
+    # ---- Guide ----
+    with tab6:
         from pages.recommendations_guide import recommendations_guide_page
         recommendations_guide_page()
 
