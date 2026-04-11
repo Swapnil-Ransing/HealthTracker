@@ -12,7 +12,8 @@ from database import get_user, get_settings, get_db_connection
 from calculations import (
     calculate_bmr, calculate_tdee,
     calculate_calories_for_weight_loss,
-    calculate_macronutrient_targets
+    calculate_macronutrient_targets,
+    calculate_exercise_calories
 )
 import os
 from dotenv import load_dotenv
@@ -166,6 +167,9 @@ def generate_calculated_recommendations(user_id: int) -> Dict:
     bmr = calculate_bmr(user['gender'], user['age'], user['height'], user['current_weight'])
     tdee = calculate_tdee(bmr, activity_level)
     
+    # Calculate exercise calories (TDEE - BMR)
+    exercise_calories = calculate_exercise_calories(tdee, bmr)
+    
     # Calculate weight loss plan
     loss_plan = calculate_calories_for_weight_loss(tdee, target_loss_per_week)
     
@@ -184,15 +188,17 @@ def generate_calculated_recommendations(user_id: int) -> Dict:
         'protein_grams': macro_targets['protein_g'],
         'carbs_grams': macro_targets['carbs_g'],
         'fat_grams': macro_targets['fat_g'],
+        'fiber_grams': macro_targets['fiber_g'],
         'calorie_deficit': round(loss_plan['daily_deficit'], 0),
+        'exercise_calories': round(exercise_calories, 0),
         'weekly_weight_loss': target_loss_per_week,
         'diet_type': diet_preference,
         'reasoning': f"Based on {activity_level} activity level and {diet_preference} diet preference",
         'tips': [
-            f"Aim for {macro_targets['protein_g']}g protein daily for better satiety",
+            f"Aim for {macro_targets['protein_g']}g protein and {macro_targets['fiber_g']}g fiber daily for satiety",
             f"Log meals consistently to track {loss_plan['daily_calorie_intake']} kcal target",
             f"You can lose ~{weight_to_lose}kg in approximately {weeks_to_goal:.0f} weeks at this pace",
-            "Drink plenty of water and get adequate sleep for optimal results"
+            "Drink plenty of water and eat fiber-rich foods for optimal digestion and results"
         ],
         'bmr': round(bmr, 0),
         'tdee': round(tdee, 0)
@@ -235,6 +241,7 @@ def save_recommendations(user_id: int, recommendations: Dict, use_gpt: bool = Tr
                 recommended_protein = ?,
                 recommended_carbs = ?,
                 recommended_fat = ?,
+                exercise_calories_target = ?,
                 diet_preference = ?,
                 use_recommendations = 1,
                 custom_calorie_goal = 0,
@@ -245,6 +252,7 @@ def save_recommendations(user_id: int, recommendations: Dict, use_gpt: bool = Tr
             recommendations.get('protein_grams', 0),
             recommendations.get('carbs_grams', 0),
             recommendations.get('fat_grams', 0),
+            recommendations.get('exercise_calories', 0),
             recommendations.get('diet_type', 'balanced'),
             user_id
         ))

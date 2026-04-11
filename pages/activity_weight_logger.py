@@ -12,13 +12,14 @@ from datetime import datetime, timedelta
 from database import (
     get_user, get_daily_summary, update_daily_summary_activity,
     update_daily_summary_weight, update_daily_summary_cheat_day,
-    create_daily_summary_if_needed
+    create_daily_summary_if_needed, get_settings
 )
 from calculations import (
     calculate_calories_burned_gym,
     calculate_calories_burned_walking,
     calculate_calorie_deficit
 )
+from recommendations import generate_calculated_recommendations
 
 
 def activity_weight_logger_page():
@@ -92,7 +93,7 @@ def activity_weight_logger_page():
         
         st.metric("Calories Burned (Gym)", f"{calories_gym:.0f} kcal")
         
-        if st.button("💾 Save Gym Activity", use_container_width=True, key="save_gym_btn"):
+        if st.button("💾 Save Gym Activity", width='stretch', key="save_gym_btn"):
             if update_daily_summary_activity(user_id, date_str, "gym", gym_duration, intensity, calories_gym):
                 st.success(f"✅ Logged {gym_duration}min {intensity} intensity gym activity ({calories_gym:.0f} kcal)")
                 st.rerun()
@@ -145,7 +146,7 @@ def activity_weight_logger_page():
         pace_km_per_hour = (distance_km / duration_minutes) * 60 if duration_minutes > 0 else 0
         st.caption(f"⏱️ Pace: {pace_km_per_hour:.1f} km/h")
         
-        if st.button("💾 Save Walking/Running", use_container_width=True, key="save_walk_btn"):
+        if st.button("💾 Save Walking/Running", width='stretch', key="save_walk_btn"):
             if update_daily_summary_activity(user_id, date_str, "walk", distance_km, f"{pace_km_per_hour:.1f} km/h", calories_walk):
                 st.success(f"✅ Logged {distance_km:.1f}km walk ({calories_walk:.0f} kcal)")
                 st.rerun()
@@ -194,7 +195,7 @@ def activity_weight_logger_page():
         col1, col2 = st.columns(2)
         
         with col1:
-            if st.button("💾 Save Weight", use_container_width=True, key="save_weight_btn"):
+            if st.button("💾 Save Weight", width='stretch', key="save_weight_btn"):
                 if update_daily_summary_weight(user_id, date_str, daily_weight):
                     st.success(f"✅ Logged weight: {daily_weight} kg")
                     st.rerun()
@@ -202,7 +203,7 @@ def activity_weight_logger_page():
                     st.error("❌ Failed to save weight")
         
         with col2:
-            if st.button("🍕 Save Cheat Day Flag", use_container_width=True, key="save_cheat_btn"):
+            if st.button("🍕 Save Cheat Day Flag", width='stretch', key="save_cheat_btn"):
                 if update_daily_summary_cheat_day(user_id, date_str, 1 if is_cheat_day else 0):
                     status = "marked ✅" if is_cheat_day else "unmarked"
                     st.success(f"✅ Cheat day {status}")
@@ -221,17 +222,41 @@ def activity_weight_logger_page():
             st.warning("No data for this date yet")
             return
         
-        # Create columns for metrics
+        # Get user's computed recommendations from Recommendations tab
+        # These are the same values displayed in Settings & Recommendations page
+        with st.spinner("🔄 Loading your targets..."):
+            calculated_rec = generate_calculated_recommendations(user_id)
+        
+        if not calculated_rec:
+            st.error("Failed to compute recommendations")
+            return
+        
+        # Extract target values from Recommendations tab
+        daily_calorie_target = calculated_rec.get('daily_calories', 0)
+        exercise_calories_target = calculated_rec.get('exercise_calories', 0)
+        bmr = calculated_rec.get('bmr', 0)
+        
+        # Create columns for metrics - Row 1: Calorie Consumption
         col1, col2, col3, col4 = st.columns(4)
+        
+        calories_consumed = daily_summary.get('calories_consumed', 0)
         
         with col1:
             st.metric(
                 "Calories Consumed",
-                f"{daily_summary.get('calories_consumed', 0):.0f} kcal",
-                help="Total calories from meals"
+                f"{calories_consumed:.0f} kcal",
+                delta=f"{calories_consumed - daily_calorie_target:+.0f}",
+                help="vs. Calorie Target"
             )
         
         with col2:
+            st.metric(
+                "Calorie Target",
+                f"{daily_calorie_target:.0f} kcal",
+                help="Daily calorie intake goal"
+            )
+        
+        with col3:
             st.metric(
                 "Gym Calories",
                 f"{daily_summary.get('calories_gym', 0):.0f} kcal",
@@ -239,7 +264,7 @@ def activity_weight_logger_page():
                 help="Calories burned from gym"
             )
         
-        with col3:
+        with col4:
             st.metric(
                 "Walking Calories",
                 f"{daily_summary.get('calories_walk', 0):.0f} kcal",
@@ -247,40 +272,89 @@ def activity_weight_logger_page():
                 help="Calories burned from walking"
             )
         
+        st.divider()
+        
+        # Row 2: Exercise and BMR (from Recommendations tab)
+        col1, col2, col3, col4 = st.columns(4)
+        
+        calories_burned_total = (daily_summary.get('calories_gym', 0) + 
+                                daily_summary.get('calories_walk', 0))
+        
+        with col1:
+            st.metric("Exercise Target", f"{exercise_calories_target:.0f} kcal", help="From Recommendations tab")
+        
+        with col2:
+            status = "✅" if calories_burned_total >= exercise_calories_target else "⚠️"
+            st.metric("Exercise Actual", f"{calories_burned_total:.0f} kcal", delta=f"{calories_burned_total - exercise_calories_target:+.0f} {status}")
+        
+        with col3:
+            st.metric("BMR", f"{bmr:.0f} kcal", help="From Recommendations tab")
+        
         with col4:
             st.metric(
-                "Weight",
-                f"{daily_summary.get('weight', 0):.1f} kg" if daily_summary.get('weight') else "Not logged",
-                help="Current weight"
+                "Walking Calories",
+                f"{daily_summary.get('calories_walk', 0):.0f} kcal",
+                delta="Burned",
+                help="Calories burned from walking"
             )
         
         st.divider()
         
-        # Calorie deficit calculation
-        calories_consumed = daily_summary.get('calories_consumed', 0)
-        calories_burned_total = (daily_summary.get('calories_gym', 0) + 
-                                daily_summary.get('calories_walk', 0))
+        # Row 3: Net Energy Balance - Target vs Actual with original signs
+        col1, col2 = st.columns(2)
         
-        # Using a base deficit constant
-        deficit_constant = 500  # Can be customized per user
-        
-        net_calories = calories_consumed - calories_burned_total - deficit_constant
-        
-        col1, col2, col3 = st.columns(3)
+        # Calculate Net values using formula: Calories - Exercise Burn - BMR
+        net_surplus_target = daily_calorie_target - exercise_calories_target - bmr
+        net_surplus_actual = calories_consumed - calories_burned_total - bmr
         
         with col1:
-            st.metric("Total Burned", f"{calories_burned_total:.0f} kcal")
+            st.markdown("#### 🎯 Net Energy Balance - Target")
+            if net_surplus_target < 0:
+                st.metric(
+                    "Target Deficit",
+                    f"{net_surplus_target:.0f} kcal",
+                    help="Negative = Deficit (weight loss)"
+                )
+            elif net_surplus_target > 0:
+                st.metric(
+                    "Target Surplus",
+                    f"{net_surplus_target:+.0f} kcal",
+                    help="Positive = Surplus (weight gain)"
+                )
+            else:
+                st.metric("Target Balanced", "0 kcal", help="Maintenance")
+            st.caption("Formula: Calories Target - Exercise Target - BMR")
         
         with col2:
-            st.metric("Deficit Constant", f"{deficit_constant} kcal")
-        
-        with col3:
-            if net_calories < 0:
-                st.metric("Net Deficit", f"{abs(net_calories):.0f} kcal", delta=f"-{abs(net_calories):.0f} ✅")
-            elif net_calories > 0:
-                st.metric("Net Surplus", f"{net_calories:.0f} kcal", delta=f"+{net_calories:.0f} ⚠️")
+            st.markdown("#### 📊 Net Energy Balance - Actual")
+            if net_surplus_actual < 0:
+                st.metric(
+                    "Actual Deficit",
+                    f"{net_surplus_actual:.0f} kcal",
+                    delta=f"{net_surplus_actual - net_surplus_target:+.0f} ✅",
+                    help="Negative = Deficit (weight loss)"
+                )
+            elif net_surplus_actual > 0:
+                st.metric(
+                    "Actual Surplus",
+                    f"{net_surplus_actual:+.0f} kcal",
+                    delta=f"{net_surplus_actual - net_surplus_target:+.0f} ⚠️",
+                    help="Positive = Surplus (weight gain)"
+                )
             else:
-                st.metric("Balanced", "0 kcal", delta="Balanced")
+                st.metric(
+                    "Balanced",
+                    "0 kcal",
+                    delta=f"{net_surplus_actual - net_surplus_target:+.0f}",
+                    help="Maintenance"
+                )
+            st.caption("Formula: Calories Consumed - Exercise Actual - BMR")
+        
+        # Show weight if logged
+        if daily_summary.get('weight'):
+            st.divider()
+            st.subheader("⚖️ Weight")
+            st.metric("Weight", f"{daily_summary['weight']:.1f} kg")
         
         st.divider()
         

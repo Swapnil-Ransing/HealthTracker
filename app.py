@@ -17,7 +17,7 @@ st.set_page_config(
     page_title="HealthTracker - Calorie & Water Intake Tracker",
     page_icon="🏃",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 # Custom CSS for better styling
@@ -67,7 +67,7 @@ def show_login_page():
         with st.form("login_form"):
             username = st.text_input("Username", placeholder="Enter your username")
             password = st.text_input("Password", type="password", placeholder="Enter your password")
-            login_button = st.form_submit_button("Login", use_container_width=True)
+            login_button = st.form_submit_button("Login", width='stretch')
             
             if login_button:
                 if username and password:
@@ -88,7 +88,7 @@ def show_login_page():
     
     with col2:
         st.info("✨ **New User?** Create account below")
-        if st.button("Sign Up Now →", use_container_width=True, key="signup_btn"):
+        if st.button("Sign Up Now →", width='stretch', key="signup_btn"):
             st.session_state.page = "signup"
             st.rerun()
     
@@ -155,7 +155,7 @@ def show_signup_page():
             family_code = st.text_input("Family Code", placeholder="Enter the 6-character family code", max_chars=6)
         
         # Submit button
-        signup_button = st.form_submit_button("Create Account", use_container_width=True)
+        signup_button = st.form_submit_button("Create Account", width='stretch')
         
         if signup_button:
             if username and password and name:
@@ -190,7 +190,7 @@ def show_signup_page():
     # Back button
     col1, col2, col3 = st.columns([1, 2, 1])
     with col1:
-        if st.button("← Back to Login", use_container_width=True):
+        if st.button("← Back to Login", width='stretch'):
             st.session_state.page = "login"
             st.rerun()
 
@@ -228,7 +228,7 @@ def show_dashboard():
         st.divider()
         
         # Logout
-        if st.button("🚪 Logout", use_container_width=True):
+        if st.button("🚪 Logout", width='stretch'):
             st.session_state.user_id = None
             st.session_state.username = None
             st.session_state.user_name = None
@@ -239,7 +239,7 @@ def show_dashboard():
     st.title(f"🏃 Welcome back, {st.session_state.user_name}!")
     
     # Tabs
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Dashboard", "Meal Logger", "Water Tracker", "Settings & Goals", "Analytics", "Activity"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["Dashboard", "Meal Logger", "Water Tracker", "Activity", "Analytics", "Settings & Goals", "📚 Guide"])
     
     with tab1:
         st.info("📊 Dashboard - Coming in next phases")
@@ -255,17 +255,24 @@ def show_dashboard():
         water_tracker_page()
     
     with tab4:
+        # Import and display activity & weight logger
+        from pages.activity_weight_logger import activity_weight_logger_page
+        activity_weight_logger_page()
+    
+    with tab5:
+        # Import and display analytics
+        from pages.analytics import analytics_page
+        analytics_page()
+    
+    with tab6:
         # Import and display settings & recommendations
         from pages.settings_recommendations import settings_recommendations_page
         settings_recommendations_page()
     
-    with tab5:
-        st.info("📈 Analytics - Coming in Phase 7")
-    
-    with tab6:
-        # Import and display activity & weight logger
-        from pages.activity_weight_logger import activity_weight_logger_page
-        activity_weight_logger_page()
+    with tab7:
+        # Import and display recommendations guide
+        from pages.recommendations_guide import recommendations_guide_page
+        recommendations_guide_page()
 
 
 def main():

@@ -103,6 +103,7 @@ def init_db():
                 calories_walk REAL DEFAULT 0,
                 calories_gym REAL DEFAULT 0,
                 calories_burned REAL DEFAULT 0,
+                exercise_calories_goal REAL DEFAULT 0,
                 calorie_deficit REAL DEFAULT 0,
                 water_intake_liters REAL DEFAULT 0,
                 weight REAL,
@@ -128,6 +129,7 @@ def init_db():
                 recommended_protein REAL DEFAULT 0,
                 recommended_carbs REAL DEFAULT 0,
                 recommended_fat REAL DEFAULT 0,
+                exercise_calories_target REAL DEFAULT 0,
                 use_recommendations INTEGER DEFAULT 1,
                 custom_calorie_goal REAL DEFAULT 0,
                 custom_protein_goal REAL DEFAULT 0,
@@ -180,6 +182,7 @@ def migrate_db():
             'recommended_protein': "REAL DEFAULT 0",
             'recommended_carbs': "REAL DEFAULT 0",
             'recommended_fat': "REAL DEFAULT 0",
+            'exercise_calories_target': "REAL DEFAULT 0",
             'use_recommendations': "INTEGER DEFAULT 1",
             'custom_calorie_goal': "REAL DEFAULT 0",
             'custom_protein_goal': "REAL DEFAULT 0",
@@ -187,11 +190,24 @@ def migrate_db():
             'custom_fat_goal': "REAL DEFAULT 0",
         }
         
-        # Add missing columns
+        # Add missing columns to settings table
         for col_name, col_def in expected_columns.items():
             if col_name not in existing_columns:
                 try:
                     cursor.execute(f"ALTER TABLE settings ADD COLUMN {col_name} {col_def}")
+                except sqlite3.OperationalError as e:
+                    pass  # Column may already exist, ignore
+        
+        # Check if daily_summary table exists and add missing columns
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='daily_summary'")
+        if cursor.fetchone():
+            cursor.execute("PRAGMA table_info(daily_summary)")
+            daily_summary_columns = [col[1] for col in cursor.fetchall()]
+            
+            # Add exercise_calories_goal if missing
+            if 'exercise_calories_goal' not in daily_summary_columns:
+                try:
+                    cursor.execute("ALTER TABLE daily_summary ADD COLUMN exercise_calories_goal REAL DEFAULT 0")
                 except sqlite3.OperationalError as e:
                     pass  # Column may already exist, ignore
         
@@ -644,6 +660,7 @@ def update_daily_summary_cheat_day(user_id: int, date: str, is_cheat_day: int) -
 def create_daily_summary_if_needed(user_id: int, date: str) -> bool:
     """
     Create a daily summary row for the user if it doesn't exist.
+    Also populates exercise_calories_goal from settings.
     
     Args:
         user_id: User ID
@@ -663,14 +680,22 @@ def create_daily_summary_if_needed(user_id: int, date: str) -> bool:
         )
         
         if not cursor.fetchone():
+            # Get exercise_calories_goal from settings
+            cursor.execute(
+                "SELECT exercise_calories_target FROM settings WHERE user_id = ?",
+                (user_id,)
+            )
+            settings_row = cursor.fetchone()
+            exercise_goal = settings_row[0] if settings_row else 0
+            
             # Row doesn't exist, create it
             cursor.execute("""
                 INSERT INTO daily_summary 
                 (user_id, date, calories_consumed, protein, carbs, fat, fiber,
-                 calories_walk, calories_gym, calories_burned, calorie_deficit,
-                 water_intake_liters, is_cheat_day, created_at, updated_at)
-                VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ?, ?)
-            """, (user_id, date, datetime.now(), datetime.now()))
+                 calories_walk, calories_gym, calories_burned, exercise_calories_goal,
+                 calorie_deficit, water_intake_liters, is_cheat_day, created_at, updated_at)
+                VALUES (?, ?, 0, 0, 0, 0, 0, 0, 0, 0, ?, 0, 0, 0, ?, ?)
+            """, (user_id, date, exercise_goal, datetime.now(), datetime.now()))
             conn.commit()
         
         return True

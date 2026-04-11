@@ -37,7 +37,7 @@ def meal_logger_page():
             key="meal_date_picker"
         )
     with col2:
-        if st.button("Today", use_container_width=True):
+        if st.button("Today", width='stretch'):
             selected_date = datetime.now().date()
     
     selected_date_str = selected_date.strftime('%Y-%m-%d')
@@ -76,9 +76,9 @@ def meal_logger_page():
         
         col1, col2 = st.columns(2)
         with col1:
-            add_meal_button = st.button("➕ Add Meal", use_container_width=True, key="add_meal_btn")
+            add_meal_button = st.button("➕ Add Meal", width='stretch', key="add_meal_btn")
         with col2:
-            clear_button = st.button("Clear", use_container_width=True, key="clear_meal_btn")
+            clear_button = st.button("Clear", width='stretch', key="clear_meal_btn")
         
         if add_meal_button and meal_description.strip():
             # Log the meal (without GPT analysis yet - will do in batch)
@@ -135,7 +135,7 @@ def meal_logger_page():
             st.divider()
             
             # Calculate calories button
-            if st.button("🤖 Calculate Calories (GPT)", use_container_width=True, key="calculate_calories_btn"):
+            if st.button("🤖 Calculate Calories (GPT)", width='stretch', key="calculate_calories_btn"):
                 with st.spinner("🔄 Analyzing meals with GPT..."):
                     # Get meals without calories calculated, keeping track of their IDs
                     meals_to_analyze = []
@@ -223,9 +223,11 @@ def meal_logger_page():
                     st.markdown(f"- Total Calories: {total_calories} kcal")
                     st.markdown(f"- Total Protein: {total_protein}g")
                     st.markdown(f"- Total Carbs: {total_carbs}g")
+                    st.markdown(f"- Total Fat: {total_fat}g")
+                    st.markdown(f"- Total Fiber: {total_fiber}g")
                 
                 # Save daily summary button
-                if st.button("💾 Save Daily Summary", use_container_width=True, key="save_summary_btn"):
+                if st.button("💾 Save Daily Summary", width='stretch', key="save_summary_btn"):
                     settings = get_settings(user_id)
                     calorie_deficit_constant = settings['calorie_deficit_constant'] if settings else 500
                     

@@ -52,6 +52,22 @@ def calculate_tdee(bmr: float, activity_level: str = "moderate") -> float:
     return round(tdee, 2)
 
 
+def calculate_exercise_calories(tdee: float, bmr: float) -> float:
+    """
+    Calculate daily exercise calories needed based on activity level.
+    Exercise calories = TDEE - BMR (the activity component).
+    
+    Args:
+        tdee: Total Daily Energy Expenditure
+        bmr: Basal Metabolic Rate
+    
+    Returns:
+        Daily exercise calories to burn
+    """
+    exercise_calories = tdee - bmr
+    return round(exercise_calories, 2)
+
+
 def calculate_calories_for_weight_loss(tdee: float, goal_weight_loss_per_week: float = 0.5) -> Dict:
     """
     Calculate calorie targets for weight loss.
@@ -286,6 +302,7 @@ def calculate_macronutrient_targets(daily_calories: float, diet_type: str = "bal
             'protein_g': float,
             'carbs_g': float,
             'fat_g': float,
+            'fiber_g': float,
             'description': str
         }
     """
@@ -306,10 +323,14 @@ def calculate_macronutrient_targets(daily_calories: float, diet_type: str = "bal
     carbs_g = round((daily_calories * carbs_pct) / 4, 1)
     fat_g = round((daily_calories * fat_pct) / 9, 1)
     
+    # Fiber recommendation: 14g per 1000 calories (Institute of Medicine guidelines)
+    fiber_g = round((daily_calories / 1000) * 14, 1)
+    
     return {
         'protein_g': protein_g,
         'carbs_g': carbs_g,
         'fat_g': fat_g,
+        'fiber_g': fiber_g,
         'description': description
     }
 

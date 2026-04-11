@@ -36,7 +36,7 @@ def water_tracker_page():
             key="water_date_picker"
         )
     with col2:
-        if st.button("Today", use_container_width=True, key="water_today_btn"):
+        if st.button("Today", width='stretch', key="water_today_btn"):
             selected_date = datetime.now().date()
     
     selected_date_str = selected_date.strftime('%Y-%m-%d')
@@ -102,7 +102,7 @@ def water_tracker_page():
         
         for col, label, amount in amounts:
             with col:
-                if st.button(label, use_container_width=True, key=f"water_quick_{label}"):
+                if st.button(label, width='stretch', key=f"water_quick_{label}"):
                     water_id = log_water(
                         user_id=user_id,
                         date=selected_date_str,
@@ -128,7 +128,7 @@ def water_tracker_page():
             key="water_custom_amount"
         )
         
-        if st.button("➕ Add Custom Amount", use_container_width=True, key="water_custom_btn"):
+        if st.button("➕ Add Custom Amount", width='stretch', key="water_custom_btn"):
             water_id = log_water(
                 user_id=user_id,
                 date=selected_date_str,
@@ -162,7 +162,7 @@ def water_tracker_page():
                 key="water_manual_time"
             )
         
-        if st.button("📝 Log Water Entry", use_container_width=True, key="water_manual_log_btn"):
+        if st.button("📝 Log Water Entry", width='stretch', key="water_manual_log_btn"):
             water_id = log_water(
                 user_id=user_id,
                 date=selected_date_str,
@@ -226,7 +226,7 @@ def water_tracker_page():
         )
     
     with col2:
-        if st.button("💾 Update Goal", use_container_width=True, key="water_goal_btn"):
+        if st.button("💾 Update Goal", width='stretch', key="water_goal_btn"):
             if update_settings(user_id, water_goal=new_daily_goal):
                 st.success(f"✅ Daily water goal updated to {new_daily_goal}L")
                 st.rerun()
